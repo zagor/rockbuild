@@ -1,0 +1,6 @@
+# This file contains all the different builds that are to be ran on each commit
+# <arch>:<upload file>:<target name>:<target description>:<build result>:<configure commandline>:<secondary make line>:<build score>
+#
+sh:rockbox.zip:archosrecorder:Recorder - Normal:ajbrec.ajz:tools/configure --target=archosrecorder --ram=2 --type=n:make zip:10478
+android:rockbox.apk:android480x800:Android 480x800 - Normal:librockbox.so:tools/configure --target=app --platform=android --lcdwidth=480 --lcdheight=800 --type=n:make zip apk:20000
+m68k::iriverh100boot:iriver H100 - Boot:bootloader.iriver:tools/configure --target=iriverh100 --type=b::571
