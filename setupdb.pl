@@ -8,7 +8,6 @@ if (scalar @ARGV < 2) {
 my $dbadminuser = $ARGV[0];
 my $dbadminpwd = $ARGV[1];
 
-
 require 'rbmaster.pm';
 
 readconfig();
@@ -34,9 +33,7 @@ $db->do("GRANT ALL ON $rbconfig{dbname}.* TO $rbconfig{dbuser}\@$rbconfig{dbhost
 
 $db->disconnect();
 
-$dbpath = "DBI:$rbconfig{dbtype}:database=$rbconfig{dbname};:host=$rbconfig{dbhost}";
-$db = DBI->connect($dbpath, $rbconfig{dbuser}, $rbconfig{dbpwd}) or
-    die "Rockbuild can't connect to database server";
+db_connect();
 
 print "> CREATE TABLE builds\n";
 $db->do("CREATE TABLE builds ( ".

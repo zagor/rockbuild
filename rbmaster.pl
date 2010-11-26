@@ -1457,6 +1457,7 @@ if ($rbconfig{test}) {
 }
 getbuilds("builds");
 db_connect();
+db_prepare();
 
 # Master socket for receiving new connections
 my $server = new IO::Socket::INET(

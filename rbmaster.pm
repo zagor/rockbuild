@@ -50,7 +50,10 @@ sub getbuilds {
 
     return if ($test);
 
-    db_connect() if (not $db);
+    if (not $db) {
+        db_connect();
+        db_prepare();
+    }
 
     # get last revision
     my $rows = $getlastrev_sth->execute();
@@ -69,8 +72,11 @@ sub getbuilds {
 
 sub getspeed($)
 {
-    db_connect() if (not $db);
     return (0,0) if ($test);
+    if (not $db) {
+        db_connect();
+        db_prepare();
+    }
 
     my ($cli) = @_;
 
@@ -123,10 +129,13 @@ sub db_connect
 {
     return if ($test);
 
-    my $dbpath = 'DBI:$rbconfig{dbtype}:$rbconfig{dbname}';
+    my $dbpath = "DBI:$rbconfig{dbtype}:database=$rbconfig{dbname};host=$rbconfig{dbhost}";
     $db = DBI->connect($dbpath, $rbconfig{dbuser}, $rbconfig{dbpwd}) or
         warn "DBI: Can't connect to database: ". DBI->errstr;
+}
 
+sub db_prepare
+{
     # prepare some statements for later execution:
 
     $submit_update_sth = $db->prepare("UPDATE builds SET client=?,timeused=?,ultime=?,ulsize=? WHERE revision=? and id=?") or
