@@ -2,6 +2,10 @@
 
 use DBI;
 
+if (scalar @ARGV < 2) {
+    print "usage: checklog.pl [revision] [build id]\n";
+    exit;
+}
 my $rev = $ARGV[0];
 my $build = $ARGV[1];
 
