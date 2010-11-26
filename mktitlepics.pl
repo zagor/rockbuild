@@ -1,32 +1,11 @@
 #!/usr/bin/perl
 
-my $dir = "titles";
+require 'rbmaster.pm';
+readconfig();
 
-my %builds;
+my $dir = $rbconfig{titledir};
 
-# copy from rbmaster.pl, could be made a .pm
-sub getbuilds {
-    my ($filename)=@_;
-    open(F, "<$filename");
-    while(<F>) {
-        # sdl:nozip:recordersim:Recorder - Simulator:rockboxui:--target=recorder,--ram=2,--type=s
-        if($_ =~ /([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):(.*)/) {
-            my ($arch, $zip, $id, $name, $file, $confopts) =
-                ($1, $2, $3, $4, $5, $6);
-            $builds{$id}{'arch'}=$arch;
-            $builds{$id}{'zip'}=$zip;
-            $builds{$id}{'name'}=$name;
-            $builds{$id}{'file'}=$file;
-            $builds{$id}{'confopts'}=$confopts;
-            $builds{$id}{'handcount'} = 0; # not handed out to anyone
-            $builds{$id}{'done'} = 0; # not done
-        }
-    }
-    close(F);
-}
-
-
-getbuilds("builds");
+getbuilds();
 
 foreach my $id (keys %builds) {
     next if (-f "$dir/$id.png");

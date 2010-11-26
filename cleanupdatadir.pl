@@ -1,6 +1,9 @@
 #!/usr/bin/perl
 
-my $dir="data";
+require 'rbmaster.pm';
+readconfig();
+
+my $dir=$rbconfig{storepath};
 
 opendir(DIR, $dir) || die "can't opendir $dir: $!";
 my @files = sort {$b <=> $a} grep { /.sizes$/ } readdir(DIR);

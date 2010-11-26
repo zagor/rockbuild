@@ -16,12 +16,6 @@
 # KIND, either express or implied.
 #
 
-# this is the local directory where clients upload logs and zips etc
-my $uploadpath="upload";
-
-# this is the local directory where zips and logs are moved to
-my $store="data";
-
 # the name of the server log
 my $logfile="logfile";
 
@@ -156,7 +150,7 @@ sub kill_build {
                 
                 my $cli = $client{$cl}{'client'};
                 
-                unlink <"$uploadpath/$cli-$id"*>;
+                unlink <"$rbconfig{uploaddir}/$cli-$id"*>;
                 delete $client{$cl}{btime}{$id};
             }
             else {
@@ -520,7 +514,7 @@ sub COMPLETED {
     my $speed = $builds{$id}{score} / $took;
 
     if (!$test) {
-        my $msg = &check_log(sprintf("$uploadpath/%s-%s.log", $cli, $id));
+        my $msg = &check_log(sprintf("$rbconfig{uploaddir}/%s-%s.log", $cli, $id));
         if ($msg) {
             slog "Fatal build error: $msg. Blocking $cli.";
             privmessage $cl, "Fatal build error: $msg. You have been temporarily disabled.";
@@ -564,15 +558,15 @@ sub COMPLETED {
         # log this build in the database
         &db_submit($buildround, $id, $cli, $took, $ultime, $ulsize);
 
-        my $base=sprintf("$uploadpath/%s-%s", $cli, $id);
+        my $base=sprintf("$rbconfig{uploaddir}/%s-%s", $cli, $id);
 
         my $upload = $builds{$id}{'upload'};
         if ($upload) {
             # if a file was uploaded, move it to storage
-            rename("$base-$upload", "$store/$id-$upload");
+            rename("$base-$upload", "$rbconfig{storedir}/$id-$upload");
         }
         # now move over the build log
-        rename("$base.log", "$store/$buildround-$id.log");
+        rename("$base.log", "$rbconfig{storedir}/$buildround-$id.log");
 
         if (-x $rbconfig{eachcomplete}) {
             my $start = time();
@@ -880,7 +874,7 @@ sub endround {
     resetbuildround();
 
     # clear upload dir
-    rmtree( $uploadpath, {keep_root => 1} );
+    rmtree( $rbconfig{uploaddir}, {keep_root => 1} );
 
     if(!$test and -x $rbconfig{roundend}) {
         my $rounds_sth = $db->prepare("INSERT INTO rounds (revision, took, clients) VALUES (?,?,?) ON DUPLICATE KEY UPDATE took=?,clients=?") or 
