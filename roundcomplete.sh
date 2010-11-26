@@ -5,14 +5,14 @@ rev=$1
 # talk to rasher before removing this
 cat data/$rev*.size > data/$rev.sizes
 
-perl clientstats.pl $rev > data/$rev-clients.html
+perl tools/clientstats.pl $rev > data/$rev-clients.html
 
-perl showbuilds.pl > builds.html
-perl showbuilds.pl 1 > builds_all.html
-perl showsize.pl > sizes.html
-perl mktitlepics.pl
-perl cleanupdatadir.pl
-perl cia_result.pl $rev
+perl tools/showbuilds.pl > builds.html
+perl tools/showbuilds.pl 1 > builds_all.html
+perl tools/showsize.pl > sizes.html
+perl tools/mktitlepics.pl
+perl tools/cleanupdatadir.pl
+perl tools/cia_result.pl $rev
 
 # make build-info for rbutil
 echo "[bleeding]" > build-info
