@@ -1,14 +1,16 @@
 #!/usr/bin/perl
-use POSIX 'strftime';
 require "rbmaster.pm";
 
-my $rev = $ARGV[0];
-if (!$rev) {
+readconfig();
+exit if (not $rbconfig{ciaenabled});
+
+if (scalar @ARGV < 1) {
     print "usage: $0 [revision]\n";
     exit;
 }
+my $rev = $ARGV[0];
 
-my $user = `svnlook author /sites/svn/rockbox --revision $rev`;
+my $user = `svnlook author $rbconfig{svnpath} --revision $rev`;
 chomp $user;
 
 db_connect();
@@ -28,8 +30,8 @@ if ($rows) {
 my ($VERSION) = '2.3';
 my ($URL) = 'http://cia.vc/clients/cvs/ciabot_cvs.pl';
 my $ts = time;
-my $project = 'rockboxbuild';
-my $module = 'module';
+my $project = $rbconfig{ciaproject};
+my $module = $rbconfig{ciamodule};
 
 $message = <<EM
 <message>
