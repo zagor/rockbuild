@@ -1,0 +1,6 @@
+Rockbuild is a system for running a distributed build farm over the internet
+(long latency and low bandwidth).
+
+It was developed for the Rockbox project and is used there for building 178
+targets after every commit. Thanks to a build farm of 50+ clients, this
+usually takes less than two minutes.
