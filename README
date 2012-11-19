@@ -1,6 +1,25 @@
-Rockbuild is a system for running a distributed build farm over the internet
-(long latency and low bandwidth).
+ ____            _    _           _ _     _ 
+|  _ \ ___   ___| | _| |__  _   _(_) | __| |
+| |_) / _ \ / __| |/ / '_ \| | | | | |/ _` |
+|  _ < (_) | (__|   <| |_) | |_| | | | (_| |
+|_| \_\___/ \___|_|\_\_.__/ \__,_|_|_|\__,_|
+                                            
+Rockbuild is a system for running a heterogeneous distributed build farm over
+the internet (long latency and low bandwidth).
 
 It was developed for the Rockbox project and is used there for building 178
 targets after every commit. Thanks to a build farm of 50+ clients, this
 usually takes less than two minutes.
+
+It has since been generalized to be applicable on any project in need of
+fast compile feedback.
+
+Copyright (C) 2010-2012 Björn Stenberg
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+KIND, either express or implied.

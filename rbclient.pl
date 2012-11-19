@@ -1,20 +1,33 @@
 #!/usr/bin/perl -swW
 #
-# $Id: rbclient.pl 26603 2010-06-05 23:37:07Z zagor $
+# This is the client-side implementation of Rockbuild.
+#
+# http://rockbuild.haxx.se
+#
+# Copyright (C) 2010-2012 Björn Stenberg
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+# KIND, either express or implied.
 #
 
-#use strict;
+use strict;
 use IO::Socket;
 use IO::Select;
 use IO::File;
 use IO::Pipe;
 use File::Basename;
 use File::Path;
+use POSIX 'nice';
 use POSIX 'strftime';
 use POSIX ":sys_wait_h";
 
 my $perlfile = "rbclient.pl";
-my $revision = 35;
+my $revision = 52;
 my $cwd = `pwd`;
 chomp $cwd;
 
@@ -28,30 +41,26 @@ sub tprint {
 }
 
 # read -parameters
-my $username = $username;
-my $password = $password;
-my $clientname = $clientname;
-my $archlist = $archlist;
-my $buildmaster = $buildmaster;
-my $port = $port;
-my $ulspeed = $ulspeed || 0;
-my $commandhook = $commandhook || '';
+our $username = $username;
+our $password = $password;
+our $clientname = $clientname;
+our $archlist = $archlist;
+our $buildmaster = $buildmaster;
+our $port = $port || 19999;
+our $ulspeed = $ulspeed || 0;
+our $commandhook = $commandhook || '';
 
-my $upload_url = "http://$buildmaster/upload.pl";
+my $upload_url = "http://$buildmaster/upload.cgi";
 
 my ($probecores) = &probecores;
-my $cores = $cores || $probecores;
-
-# Modify the speed accordingly if not using all cores
-if ($cores ne $probecores) {
-    $speed = $cores * ($speed / $probecores);
-}
+our $cores = $cores || $probecores;
 
 my $cpu = `uname -m`;
 chomp $cpu;
 my $os = `uname -s`;
 chomp $os;
 
+our $bits;
 if ($cpu eq "i686" or $cpu eq "i386" or $cpu eq "armv5tel") {
     $bits = 32;
 }
@@ -63,6 +72,7 @@ else {
     exit 22;
 }
 
+our $config;
 &readconfig($config) if ($config);
 
 unless ($username and $password and $archlist and $clientname) {
@@ -109,9 +119,6 @@ MOO
 
 &testsystem();
 
-if (not -d "builds") {
-    mkdir "builds";
-}
 # no localized messages, please
 $ENV{LC_ALL} = 'C';
 
@@ -129,6 +136,8 @@ while (1) {
 
     last if ($sock and $sock->connected);
 }
+
+our %conntype;
 
 $sock->blocking(0);    
 
@@ -213,7 +222,7 @@ while (1) {
                     delete $conntype{$rh->fileno};
                     close $rh;
 
-                    my $dir = "$cwd/builds/build-$id";
+                    my $dir = "$cwd/build-$id";
                     if (-d $dir) {
                         rmtree $dir;
                     }
@@ -262,23 +271,36 @@ sub startbuild
     my $pipe = new IO::Pipe();
     $builds{$id}{pipe} = $pipe;
 
-    # fix svn
-    my $buf = `svnversion`;
-    my $rev;
-    if ($buf =~ /(\d\w+)/) {
-        $rev = $1;
-        if ($rev =~ /M/) {
-            tprint "*** Your source tree is modified! Clean it up and restart.\n";
-            exit 22;
+    if (-d ".svn") {
+        # check svn
+        my $buf = `svnversion`;
+        my $rev;
+        if ($buf =~ /(\d\w+)/) {
+            $rev = $1;
+            if ($rev =~ /M/) {
+                tprint "*** Your source tree is modified! Clean it up and restart.\n";
+                exit 22;
+            }
+        }
+        if ($rev != $builds{$id}{rev}) {
+            # (using system() to make stderr messages appear on client console)
+            system("svn up -q -r $builds{$id}{rev}");
         }
     }
-    if ($rev != $builds{$id}{rev}) {
+    elsif (-d ".git") {
+        # check git
+        my $mod = `git status --porcelain --untracked-files=no`;
+        if ($mod =~ / M /) {
+            tprint "Your source tree is modified! Clean it up and restart.\n";
+            exit 22;
+        }
         # (using system() to make stderr messages appear on client console)
-        system("svn up -q -r $builds{$id}{rev}");
-    }
-    if ($?) { # abort if svn failed
-        tprint "*** Subversion error!\n";
-        return;
+        system("git remote update");
+        system("git checkout --quiet --force $builds{$id}{rev}");
+        if ($?) { # abort if git failed
+            tprint "*** git error!\n";
+            return;
+        }
     }
 
     # start timer
@@ -299,41 +321,47 @@ sub startbuild
         setpgrp;
         $pipe->writer();
         $pipe->autoflush();
+        nice 19; # go to background priority
         my $starttime = time();
         # It is important that we name the uploaded files
         # [client]-[user]-[build].log/zip as otherwise the server won't
         # find/use it
         my $base="$clientname-$username-$id";
 
-        chdir "builds";
         if (-d "build-$id") {
             rmtree "build-$id";
         }
         mkdir "build-$id";
-        my $logfile = "$cwd/builds/build-$id/$base.log";
+        chdir "build-$id";
+        my $logfile = "$base.log";
         my $log = ">> $logfile 2>&1";
         
-        open DEST, ">$logfile";
+        my $cmdline = $builds{$id}{cmdline};
+
+        if (not open DEST, ">$logfile") {
+            tprint "Failed creating log file $logfile: $!\n";
+            exit;
+        }
         # to keep all other scripts working, use the same output as buildall.pl:
         print DEST "Build Start Single\n";
         
         printf DEST "Build Date: %s\n", strftime("%Y%m%dT%H%M%SZ", gmtime);
         print DEST "Build Type: $id\n";
-        print DEST "Build Dir: $cwd/builds/build-$id\n";
-        print DEST "Build Server: $clientname-$username\n";
+        print DEST "Build Dir: $cwd/build-$id\n";
+        print DEST "Build Client: $clientname-$username\n";
+        print DEST "Build Command: $cmdline\n";
         close DEST;
 
-        chdir "build-$id";
-        my $configure = $builds{$id}{configure};
-        if ($configure) {
-            `$cwd/$configure $log`;
-        }
-        if ($builds{$id}{cores} > 1) {
-            my $c = $cores + 1;
-            `nice make -k -j$c $log`;
-        }
-        else {
-            `nice make -k $log`;
+        if ($cmdline) {
+            if ($builds{$id}{cores} > 1) {
+                my $c = $cores + 1;
+                $ENV{MAKEFLAGS} = "-j$c";
+            }
+            else {
+                $ENV{MAKEFLAGS} = "-j1";
+            }
+            tprint "($cmdline) $log\n";
+            `($cmdline) $log`;
         }
 
         # report
@@ -352,37 +380,23 @@ sub startbuild
         print $pipe "uploading $id $$\n";
         &upload($logfile);
 
+        tprint "No result file $builds{$id}{result}\n"
+            if (not -f $builds{$id}{result});
+
         # create upload file
         my ($ultime, $ulsize) = (0,0);
-        if (-f $builds{$id}{result} and 
-            exists $builds{$id}{upload} and
-            exists $builds{$id}{makeupload})
+        if ($builds{$id}{upload})
         {
-            my $upload = $builds{$id}{upload};
-            tprint "Making $id $upload\n";
-            my $makeupload = $builds{$id}{makeupload};
-            `nice $makeupload $log`;
-
-            if (-f $upload) {
-                my $newname = "$base-$upload";
-                    if (rename $upload, $newname) {
-                        my $ulstart = time();
-                        &upload($newname);
-                        $ultime = time() - $ulstart;
-                        $ulsize = (stat($newname))[7];
-                    }
-            }
-            else {
-                tprint "?? no $upload\n";
-                print $pipe "done $id $$ 0 0 noupload\n";
-                close $pipe;
-                exit;
+            my $newname = "$base-$builds{$id}{result}";
+            if (rename $builds{$id}{result}, $newname) {
+                my $ulstart = time();
+                &upload($newname);
+                $ultime = time() - $ulstart;
+                $ulsize = (stat($newname))[7];
             }
         }
         else {
-            tprint "No result file $builds{$id}{result}\n" if (not -f $builds{$id}{result});
-            tprint "No upload\n" if (not exists $builds{$id}{upload});
-            tprint "No makeupload\n" if (not exists $builds{$id}{makeupload});
+            tprint "No upload\n";
         }
 
         tprint "child: $id ($$) done\n";
@@ -406,6 +420,7 @@ sub upload
         $limit = "--limit-rate ${ulspeed}k";
     }
 
+    tprint "curl $limit -s -F upfile=\@$file $upload_url\n";
     `curl $limit -s -F upfile=\@$file $upload_url`;
 }
 
@@ -462,7 +477,9 @@ sub CANCEL
 sub BUILD
 {
     my ($buildparams) = @_;
-    my ($id, $configure, $rev, $makeupload, $upload, $mt, $result) = 
+    # ipodcolorboot:29961:mt:bootloader-ipodcolor.ipod:0:../tools/configure --target=ipodcolor --type=b && make
+
+    my ($id, $rev, $mt, $result, $upload, $cmdline) = 
         split(':', $buildparams);
 
     tprint "Got BUILD $buildparams\n";
@@ -472,13 +489,11 @@ sub BUILD
         return;
     }
 
-    $builds{$id}{configure} = $configure;
     $builds{$id}{rev} = $rev;
-    $builds{$id}{makeupload} = $makeupload;
-    $builds{$id}{upload} = $upload;
-    $builds{$id}{mt} = $mt;
     $builds{$id}{cores} = $mt eq "mt" ? $cores : 1;
     $builds{$id}{result} = $result;
+    $builds{$id}{upload} = $upload;
+    $builds{$id}{cmdline} = $cmdline;
     $builds{$id}{seqnum} = $buildnum++;
 
     print $sock "_BUILD $id\n";
@@ -508,8 +523,17 @@ sub MESSAGE
     print $sock "_MESSAGE\n";
 }
 
+sub SYSTEM
+{
+    my ($cmd) = @_;
+    tprint "Server system command: $cmd\n";
+    system($cmd);
+}
+
 sub parsecmd
 {
+    no strict 'refs';
+
     my ($cmdstr)=@_;
     my %functions = ('_HELLO', 1,
                      '_COMPLETED', 1,
@@ -519,7 +543,8 @@ sub parsecmd
                      'PING', 1,
                      'UPDATE', 1,
                      'CANCEL', 1,
-                     'MESSAGE', 1);
+                     'MESSAGE', 1,
+                     'SYSTEM', 1);
     
     if($cmdstr =~ /^([_A-Z]*) *(.*)/) {
         my $func = $1;
@@ -547,20 +572,36 @@ sub testsystem
     # this is still rockbox specific. change this to suit your project.
 
     # check compilers
-    %which = (
-        "arm", "arm-elf-gcc",
-        "arm-eabi-gcc444", "arm-elf-eabi-gcc",
-        "sh", "sh-elf-gcc",
-        "m68k", "m68k-elf-gcc",
-        "mipsel", "mipsel-elf-gcc",
-        "sdl", "sdl-config",
-        "android", "javac",
-        );
+    my %compilers = (
+                  "arm", ["arm-elf-gcc --version", "4.0.3"],
+                  "arm-eabi-gcc444", ["arm-elf-eabi-gcc --version", "4.4.4"],
+                  "sh", ["sh-elf-gcc --version", "4.0.3"],
+                  "m68k", ["m68k-elf-gcc --version", "3.4.6"],
+                  "m68k-gcc452", ["m68k-elf-gcc --version", "4.5.2"],
+                  "mipsel", ["mipsel-elf-gcc --version", "4.1.2"],
+                  "sdl", ["sdl-config --version", ".*"],
+                  "android15", ["android list target", "API level: 15"],
+                  "latex", ["pdflatex --version", "pdfTeX 3.1415926"],
+                  );
 
     for (split ',', $archlist) {
-        my $p = `which $which{$_}`;
-        if (not $p =~ m|^/|) {
-            tprint "You specified arch $_ but don't have $which{$_} in your path!\n";
+        my $p = `$compilers{$_}[0]`;
+        if (not $p =~ /$compilers{$_}[1]/) {
+            tprint "Error: You specified arch $_ but the output of '$compilers{$_}[0]' did not include '$compilers{$_}[1]'.\n";
+            exit 22;
+        }
+    }
+
+    if (0) {
+        # rockbox svn-to-git client transition, preserved here
+        # as an example
+        if (not -d ".git") {
+            `curl -o svn2git.sh http://www.rockbox.org/buildserver/svn2git.sh`;
+            `sh svn2git.sh`;
+        }
+
+        if (not -d ".git") {
+            tprint "git transition failed.\n";
             exit 22;
         }
     }
@@ -592,14 +633,32 @@ sub testsystem
     }
         
     # check that source tree is unmodified
-    my $rev = `svnversion`;
-    if ($rev =~ /M/) {
+    my $modified = 0;
+    if (-d ".svn") {
+        my $rev = `svnversion`;
+        if ($rev =~ /M/) {
+            $modified = 1;
+        }
+    }
+    elsif (-d ".git") {
+        my $mod = `git status --porcelain --untracked-files=no`;
+        if ($mod =~ / M /) {
+            $modified = 1;
+        }
+    }
+
+    if ($modified) {
         tprint "Your source tree is modified! Clean it up and restart.\n";
         exit 22;
     }
 
-    # update svn to latest version
-    system("svn up");
+    # update to latest version
+    if (-d ".svn") {
+        system("svn up");
+    }
+    elsif (-d ".git") {
+        system("git fetch");
+    }
 }
 
 sub readconfig
@@ -648,7 +707,7 @@ sub killchild
         waitpid $pid, 0;
     }
 
-    my $dir = "$cwd/builds/build-$id";
+    my $dir = "$cwd/build-$id";
     if (-d $dir) {
         tprint "Removing $dir\n";
         rmtree $dir;
