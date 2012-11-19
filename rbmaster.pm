@@ -3,7 +3,7 @@
 #
 # http://rockbuild.haxx.se
 #
-# Copyright (C) 2010-2012 Björn Stenberg
+# Copyright (C) 2010-2012 Björn Stenberg <bjorn@haxx.se>
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
